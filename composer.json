@@ -1,0 +1,8 @@
+{
+    "name": "eelf/lescript",
+    "autoload": {
+        "psr-4": {
+            "Le\\": "src"
+        }
+    }
+}
