@@ -100,10 +100,11 @@ EOT;
         File::write($name, $payload);
 
         if (self::$logger) {
-            self::$logger->log("wrote_file: $name");
-            self::$logger->log("location: $location");
-            self::$logger->log("token: $token");
+            self::$logger->log("put file $name to <web-root>/.well-known/acme-challenge/$token");
             self::$logger->log("challenge_uri: $challenge_uri");
+            self::$logger->log("token: $token");
+            self::$logger->log("file: $name");
+            self::$logger->log("location: $location");
         }
     }
 
@@ -180,6 +181,12 @@ EOT;
         File::write('fullchain.pem', implode("\n", $certificates));
         File::write('cert.pem', array_shift($certificates));
         File::write("chain.pem", implode("\n", $certificates));
+        if (self::$logger) {
+            self::$logger->log("wrote files: fullchain.pem cert.pem chain.pem");
+            self::$logger->log("nginx config:\n"
+                . "ssl_certificate     fullchain.pem;\n"
+                . "ssl_certificate_key domain.key;");
+        }
     }
 
     private static function makePemFromBody($body) {

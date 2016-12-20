@@ -57,32 +57,9 @@ class Api {
             $uri = $this->base . $uri;
         }
 
-        $details = $this->key->getDetails();
-        $header = array(
-            "alg" => "RS256",
-            "jwk" => array(
-                "kty" => "RSA",
-                "n" => Base64UrlSafeEncoder::encode($details["rsa"]["n"]),
-                "e" => Base64UrlSafeEncoder::encode($details["rsa"]["e"]),
-            )
-        );
+        $Jwk = new Jwk;
+        $data = $Jwk->sign($payload, $this->key, $this->nonce);
 
-        $protected = $header;
-        $protected["nonce"] = $this->nonce;
-
-        $payload64 = Base64UrlSafeEncoder::encode(str_replace('\\/', '/', json_encode($payload)));
-        $protected64 = Base64UrlSafeEncoder::encode(json_encode($protected));
-
-        $signed = $this->key->sign($protected64 . '.' . $payload64);
-
-        $signed64 = Base64UrlSafeEncoder::encode($signed);
-
-        $data = json_encode([
-            'header' => $header,
-            'protected' => $protected64,
-            'payload' => $payload64,
-            'signature' => $signed64
-        ]);
         $Request = Request::post($uri, $data);
         $Request->header([
             'Accept: application/json',
