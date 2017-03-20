@@ -18,7 +18,7 @@ class Process {
 help                            this help
 make_key key_path               make key and save to key_path
 reg_account key_path            reg new account with key path
-make_challenge key_path domain
+make_challenge private_key domain
 challenge key_path challnge_uri challange_token payload_file location
 make_cert domain_key domain private_key
 EOT;
@@ -105,6 +105,7 @@ EOT;
             self::$logger->log("token: $token");
             self::$logger->log("file: $name");
             self::$logger->log("location: $location");
+            self::$logger->log("php le.php challenge $path $challenge_uri $token $name $location");
         }
     }
 

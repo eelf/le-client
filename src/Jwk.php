@@ -4,7 +4,6 @@ namespace Le;
 
 class Jwk {
 	public function sign($payload, SslKey $Key, $nonce) {
-        var_dump($payload);
         $payload64 = Base64UrlSafeEncoder::encode(str_replace('\\/', '/', json_encode($payload)));
 
         $details = $Key->getDetails();

@@ -85,8 +85,14 @@ class Request {
         $ctx = stream_context_create($opts);
 
         if ($this->logger) {
-            $this->logger->log("Making request using method " . $this->method . " to " . $url);
-            $this->logger->log("Request options are " . print_r($opts, true));
+            $options_str = [];
+            foreach ($opts as $wrapper_name => $wrapper_opts) {
+                foreach ($wrapper_opts as $opt_name => $opt_value) {
+                    $options_str[] = "$wrapper_name.$opt_name:" . var_export($opt_value, true);
+                }
+            }
+            $this->logger->log("Making request using method " . $this->method . " to " . $url . "\n"
+                . implode("\n", $options_str));
         }
 
         $body = file_get_contents($url, false, $ctx);
