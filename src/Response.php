@@ -14,9 +14,8 @@ class Response {
     private $decode_err;
 
     public function __construct($headers, $content, $type = self::TYPE_JSON) {
-        // service locator ;)
-        /** @var Callable $dumper */
-        if ($dumper = $GLOBALS['dumper'] ?? null) $dumper($headers, $content);
+        $dumper = Services::dumper();
+        $dumper($headers, $content);
 
         foreach ($headers as $idx => $header) {
             if ($idx == 0) {

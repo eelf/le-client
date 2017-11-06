@@ -18,16 +18,12 @@ class Request {
     /** @var Log */
     private $logger;
 
-    public static function get($uri, $logger = null) {
-        // service locator ;)
-        if (!$logger) $logger = $GLOBALS['logger'];
-        return (new self())->method(self::METHOD_GET)->url($uri)->logger($logger);
+    public static function get($uri) {
+        return (new self())->method(self::METHOD_GET)->url($uri)->logger(Services::logger());
     }
 
-    public static function post($uri, $content, $logger = null) {
-        // service locator ;)
-        if (!$logger) $logger = $GLOBALS['logger'];
-        return (new self())->method(self::METHOD_POST)->url($uri)->content($content)->logger($logger);
+    public static function post($uri, $content) {
+        return (new self())->method(self::METHOD_POST)->url($uri)->content($content)->logger(Services::logger());
     }
 
     public function method($method) {
@@ -91,8 +87,8 @@ class Request {
                     $options_str[] = "$wrapper_name.$opt_name:" . var_export($opt_value, true);
                 }
             }
-            $this->logger->log("Making request using method " . $this->method . " to " . $url . "\n"
-                . implode("\n", $options_str));
+            $this->logger->log("Making request using method " . $this->method . " to " . $url . " with options:\n\t"
+                . implode("\n\t", $options_str));
         }
 
         $body = file_get_contents($url, false, $ctx);

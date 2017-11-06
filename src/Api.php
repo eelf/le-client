@@ -51,7 +51,12 @@ class Api {
     }
 
     public function signedRequest($uri, array $payload) {
-        if ($this->nonce === null) throw new \RuntimeException("No nonce");
+        if ($this->nonce === null) {
+            $this->directory();
+            if ($this->nonce === null) {
+                throw new \Exception("Could not get nonce after directory request");
+            }
+        }
 
         if (!preg_match('#^http#', $uri)) {
             $uri = $this->base . $uri;
@@ -67,9 +72,5 @@ class Api {
         ]);
         $Response = $Request->run();
         return $Response;
-    }
-
-    public function getNonce() {
-        return $this->nonce;
     }
 }

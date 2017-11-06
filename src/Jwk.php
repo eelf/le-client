@@ -1,4 +1,7 @@
 <?php
+/**
+ * @author Evgeniy Makhrov <emakhrov@gmail.com>
+ */
 
 namespace Le;
 

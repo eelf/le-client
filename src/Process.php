@@ -6,13 +6,21 @@
 namespace Le;
 
 class Process {
-    /** @var Log */
-    private static $logger;
+    public static function run($argv, $work_dir) {
+        Services::logger(new Log());
+        Services::work_dir($work_dir);
 
-    public static function run($argv) {
-        self::$logger = $GLOBALS['logger'] ?? null;
+        $dumper = function($headers, $content) {
+            list ($frac, $sec) = explode(' ', microtime());
+            $work_dir = Services::work_dir();
+            $filename = $work_dir . '/' . date('Y-m-d_H-i-s_', $sec) . str_pad($frac * 1e6, 6, "0", STR_PAD_LEFT);
+            File::write($filename . '_headers', print_r($headers, true));
+            File::write($filename . '_content', $content);
+        };
+        Services::dumper($dumper);
 
-        $action = isset($argv[1]) ? $argv[1] : null;
+        $action = $argv[1] ?? null;
+
         if (!$action || $action == 'help') {
             echo <<<EOT
 help                            this help
@@ -21,200 +29,121 @@ reg_account key_path            reg new account with key path
 make_challenge private_key domain
 challenge key_path challnge_uri challange_token payload_file location
 make_cert domain_key domain private_key
+prolongate config domain
 EOT;
+        } else if ($action == 'prolongate') {
+            self::prolongate($argv[2] ?? null, $argv[3] ?? null);
         } else if ($action == 'make_key') {
-            if (!isset($argv[2])) throw new \RuntimeException("key_path");
-            $path = $argv[2];
+            $path = $argv[2] ?? null;
             $Key = SslKey::generateNew();
             $key_str = $Key->export();
             File::write($path, $key_str);
-            if (self::$logger) self::$logger->log("Wrote key to $path");
+            Services::logger()->log("Wrote key to $path");
         } else if ($action == 'reg_account') {
             if (!isset($argv[2])) throw new \RuntimeException("key_path");
             $path = $argv[2];
             $Key = SslKey::fromFile($path);
 
-            if (self::$logger) self::$logger->log("Read key from $path");
+            Services::logger()->log("Read key from $path");
 
             $Api = new Api(Api::BASE, $Key);
             $Response = $Api->newReg(Api::LICENSE);
-            if (self::$logger) self::$logger->log("Register call result: " . print_r($Response->getStatusAndHeaders(), true)
+            Services::logger()->log("Register call result: " . print_r($Response->getStatusAndHeaders(), true)
                 . "\n" . $Response->getContent());
 
         } else if ($action == 'make_challenge') {
-            if (!isset($argv[3])) throw new \RuntimeException("not enough params");
-            $path = $argv[2];
-            $domain = $argv[3];
-            self::makeChallenge($path, $domain);
+            $account_key_path = $argv[2] ?? null;
+            $domain = $argv[3] ?? null;
+            $Process = new ProcessMakeChallenge();
+            $Process->run($domain, $account_key_path);
         } else if ($action == 'challenge') {
-            if (!isset($argv[6])) throw new \RuntimeException("not enough params");
-            $path = $argv[2];
-            $uri = $argv[3];
-            $token = $argv[4];
-            $file = $argv[5];
-            $location = $argv[6];
-            self::challenge($path, $uri, $token, $file, $location);
+            $path = $argv[2] ?? null;
+            $uri = $argv[3] ?? null;
+            $token = $argv[4] ?? null;
+            $file = $argv[5] ?? null;
+            $location = $argv[6] ?? null;
+            $Process = new ProcessChallenge();
+            $Process->run($path, $uri, $token, $file, $location);
         } else if ($action == 'make_cert') {
-            if (!isset($argv[4])) throw new \RuntimeException("not enough params");
-            $domain_key = $argv[2];
-            $domain = $argv[3];
-            $private_key = $argv[4];
-            self::makeCert($domain_key, $domain, $private_key);
+            $domain_key = $argv[2] ?? null;
+            $domain = $argv[3] ?? null;
+            $private_key = $argv[4] ?? null;
+            $Process = new ProcessMakeCert();
+            $Process->run($domain, $domain_key, $private_key);
         }
     }
 
-    public static function makeChallenge($path, $domain) {
-        if (!extension_loaded('hash')) throw new \RuntimeException("ext hash not loaded");
-        $Key = SslKey::fromFile($path);
-        $Api = new Api(Api::BASE, $Key);
-        self::ensureNonce($Api);
+    private static function prolongate($config_path, $domain) {
+        self::ensure_extensions(['hash', 'json']);
 
-        $Response = $Api->newAuthz($domain);
-        $arr = $Response->getContent();
-        if (!is_array($arr)) {
-            throw new \RuntimeException("Failed to get json response:" . $Response->getDecodeErr() . ":" . $arr);
+        if (!is_file($config_path)) throw new \Exception("not a config file $config_path");
+        $config = require $config_path;
+        if (!isset($config['domains'][$domain])) throw new \Exception("no config for domain $domain");
+        $domain_config = $config['domains'][$domain];
+        if (!isset($config['accounts'][$domain_config['account']])) throw new \Exception("no config for account $domain_config[account]");
+        $account_config = $config['accounts'][$domain_config['account']];
+
+        $MakeChallengeProc = new ProcessMakeChallenge();
+        $make_challenge_res = $MakeChallengeProc->run($domain, $account_config['key']);
+
+//        $domain_config['auth_agent'];
+        $dir = $domain_config['web_root'] . '/.well-known/acme-challenge';
+        list ($code, $output) = self::execRemote('mkdir', ['-p', $dir], '2>&1', $domain_config['user'], $domain_config['host'], $domain_config['port']);
+        if ($code) {
+            throw new \Exception("failed to mkdir: $output");
         }
 
-        $challenge = array_reduce(
-            $arr['challenges'],
-            function($v, $w) { return $v ? $v : ($w['type'] == 'http-01' ? $w : false); }
-        );
-        if (!$challenge) throw new \RuntimeException("no challenge:" . print_r($arr, true));
-        $token = $challenge['token'];
-        $challenge_uri = $challenge['uri'];
-
-        $location = $Response->getHeader('location');
-
-
-        $details = $Key->getDetails();
-
-        $header = [
-            "e" => Base64UrlSafeEncoder::encode($details["rsa"]["e"]),
-            "kty" => "RSA",
-            "n" => Base64UrlSafeEncoder::encode($details["rsa"]["n"])
-        ];
-        $payload = $challenge['token'] . '.' . Base64UrlSafeEncoder::encode(hash('sha256', json_encode($header), true));
-
-        $name = tempnam(sys_get_temp_dir(), 'token');
-        chmod($name, 0644);
-        File::write($name, $payload);
-
-        if (self::$logger) {
-            self::$logger->log("put file $name to <web-root>/.well-known/acme-challenge/$token");
-            self::$logger->log("challenge_uri: $challenge_uri");
-            self::$logger->log("token: $token");
-            self::$logger->log("file: $name");
-            self::$logger->log("location: $location");
-            self::$logger->log("php le.php challenge $path $challenge_uri $token $name $location");
+        $remote_file = $dir . '/' . $make_challenge_res['token'];
+        list ($code, $output) = self::copyRemote($make_challenge_res['confirmation_file'], $remote_file, $domain_config['user'], $domain_config['host'], $domain_config['port']);
+        if ($code) {
+            throw new \Exception("failed to copy token: $output");
         }
+
+        $ChallegeProc = new ProcessChallenge();
+        $ChallegeProc->run($account_config['key'], $make_challenge_res['uri'], $make_challenge_res['token'], $make_challenge_res['confirmation_file'], $make_challenge_res['location']);
+
+        $Key = SslKey::generateNew();
+        $key_str = $Key->export();
+        $path = tempnam(Services::work_dir(), 'key');
+        File::write($path, $key_str);
+        Services::logger()->log("Wrote key to $path");
+
+        $MakeCertProc = new ProcessMakeCert();
+        $fullchain_filename = $MakeCertProc->run($domain, $path, $account_config['key']);
+
+        list ($code, $output) = self::copyRemote($fullchain_filename, $domain_config['cert'], $domain_config['user'], $domain_config['host'], $domain_config['port']);
+        if ($code) {
+            throw new \Exception("failed to copy cert: $output");
+        }
+        list ($code, $output) = self::copyRemote($path, $domain_config['private'], $domain_config['user'], $domain_config['host'], $domain_config['port']);
+        if ($code) {
+            throw new \Exception("failed to copy key: $output");
+        }
+        //chown key and cert and reload nginx
     }
 
-    public static function challenge($path, $uri, $token, $file, $location) {
-        $payload = file_get_contents($file);
-        $Key = SslKey::fromFile($path);
-        $Api = new Api(Api::BASE, $Key);
-        self::ensureNonce($Api);
-
-        $Result = $Api->signedRequest(
-            $uri,
-            [
-                "resource" => "challenge",
-                "type" => "http-01",
-                "keyAuthorization" => $payload,
-                "token" => $token,
-            ]
-        );
-
-        $arr = $Result->getContent();
-        while (true) {
-            if (empty($arr['status']) || $arr['status'] == "invalid") {
-                throw new \RuntimeException("Verification ended with error: " . print_r($arr, true));
-            }
-            if ($arr['status'] !== "pending") break;
-
-            sleep(1);
-
-            $Reqeust = Request::get($location);
-            $Response = $Reqeust->run();
-            $arr = $Response->getContent();
-        }
+    private static function execRemote($prog, $args, $redir, $user, $host, $port) {
+        $args = array_merge(["-p", $port, "$user@$host"], [$prog], $args);
+        return self::exec('ssh', $args, $redir);
     }
 
-    public static function makeCert($domain_key, $domain, $private_key) {
-        $domains = [$domain];
-
-        $DomainKey = SslKey::fromFile($domain_key);
-
-        $SslCsr = new SslCsr();
-        list ($csr, $_) = $SslCsr->generateCSR($DomainKey, reset($domains), $domains);
-
-        $PrivateKey = SslKey::fromFile($private_key);
-
-        $LeApi = new Api(Api::BASE, $PrivateKey);
-
-        self::ensureNonce($LeApi);
-
-        $Response = $LeApi->newCert($csr);
-
-        $location = $Response->getHeader('location');
-
-        $certificates = [];
-        while (!($Response = self::waitForCert($location)));
-
-        $certificates[] = self::makePemFromBody($Response->getContent());
-
-        foreach ((array)$Response->getHeader('link') as $link) {
-            // [link] => </acme/issuer-cert>;rel="up"
-            if (!preg_match('#<(?P<link>.*)>;rel="up"#', $link, $m)) {
-                if (self::$logger) self::$logger->log("bad link: $link");
-                continue;
-            }
-            $link = $m['link'];
-            // if link is relative then make it absolute
-            if (!preg_match('#^[a-z]+://#', $link)) {
-                $link = Api::BASE . $link;
-            }
-            $Response = Request::get($link)->run();
-            $certificates[] = self::makePemFromBody($Response->getContent());
-        }
-
-        if (empty($certificates)) throw new \RuntimeException('No certificates generated');
-        File::write('fullchain.pem', implode("\n", $certificates));
-        File::write('cert.pem', array_shift($certificates));
-        File::write("chain.pem", implode("\n", $certificates));
-        if (self::$logger) {
-            self::$logger->log("wrote files: fullchain.pem cert.pem chain.pem");
-            self::$logger->log("nginx config:\n"
-                . "ssl_certificate     fullchain.pem;\n"
-                . "ssl_certificate_key domain.key;");
-        }
+    private static function copyRemote($local, $remote, $user, $host, $port) {
+        $args = array_merge(["-P", $port, $local, "$user@$host:$remote"]);
+        return self::exec('scp', $args, '2>&1');
     }
 
-    private static function makePemFromBody($body) {
-        $pem = chunk_split(base64_encode($body), 64, "\n");
-        return "-----BEGIN CERTIFICATE-----\n$pem-----END CERTIFICATE-----\n";
+    private static function exec($prog, $args, $redir) {
+        $cmd = $prog . ' ' . implode(' ', array_map('escapeshellarg', $args)) . ' ' . $redir;
+        Services::logger()->log("exec $cmd");
+        exec($cmd, $out, $ret);
+        $out = implode("\n", $out);
+        Services::logger()->log("= $ret\n$out");
+        return [$ret, $out];
     }
 
-    /**
-     * @param $url
-     * @return Response|bool false when retry needed
-     */
-    private static function waitForCert($url) {
-        $Response = Request::get($url)->run();
-
-        if (!in_array($Response->getStatusCode(), [200, 202])) {
-            throw new \RuntimeException("Can't get certificate: HTTP code " . print_r($Response->getStatusAndHeaders(), true));
-        }
-        if ($Response->getStatusCode() == 202) {
-            sleep(1);
-            return false;
-        }
-        return $Response;
-    }
-
-    private static function ensureNonce(Api $Api) {
-        if (!$Api->getNonce()) {
-            $Api->directory();
+    private static function ensure_extensions(array $exts) {
+        foreach ($exts as $ext) {
+            if (!extension_loaded($ext) && !dl("$ext.so")) throw new \Exception("could not load extension $ext");
         }
     }
 }
