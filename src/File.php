@@ -21,6 +21,10 @@ class File {
         return $tmp_name;
     }
 
+    public static function chmod($name, $mode) {
+        if (!chmod($name, $mode)) throw new \Exception("could not chmod($name, $mode)");
+    }
+
     public static function copy($from, $to, $remote_from = null, $remote_to = null) {
         if (!$remote_from && !$remote_to) {
             $result = copy($from, $to);

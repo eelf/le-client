@@ -37,7 +37,7 @@ class ProcessProlongate {
 
         $Key = SslKey::generateNew();
         $key_str = $Key->export();
-        $path = tempnam(Services::work_dir(), 'key');
+        $path = File::tmp('key', Services::work_dir());
         File::write($path, $key_str);
         Services::logger()->log("Wrote key to $path");
 

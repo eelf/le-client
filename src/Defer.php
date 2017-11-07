@@ -6,24 +6,18 @@
 namespace Le;
 
 class Defer {
-    private $callable;
-    private $args;
+    private $callable, $args;
 
-    public static function add(&$list, Callable $callable) {
-        $args = func_get_args();
-        array_shift($args);
-        array_shift($args);
+    public static function add(&$list, Callable $callable, ...$args) {
         $list[] = new self($callable, $args);
     }
 
-    private function __construct(Callable $callable, array $args) {
+    public function __construct(Callable $callable, array $args) {
         $this->callable = $callable;
         $this->args = $args;
     }
 
     public function __destruct() {
-        $callable = $this->callable;
-        $this->callable = null;
-        call_user_func_array($callable, $this->args);
+        ($this->callable)(...$this->args);
     }
 }

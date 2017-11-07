@@ -39,8 +39,8 @@ class ProcessMakeChallenge {
         ];
         $payload = $challenge['token'] . '.' . Base64UrlSafeEncoder::encode(hash('sha256', json_encode($header), true));
 
-        $name = tempnam(Services::work_dir(), 'token');
-        chmod($name, 0644);
+        $name = File::tmp('token', Services::work_dir());
+        File::chmod($name, 0644);
         File::write($name, $payload);
 
         $Logger = Services::logger();
