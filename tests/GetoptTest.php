@@ -9,12 +9,12 @@ class GetoptTest extends \PHPUnit\Framework\TestCase {
     public static function providerGetoptSuccess() {
         return [
             [['le.php'], [], [], []],
-            [['le.php', '-a'], ['a' => ''], ['a' => null], []],
+            [['le.php', '-a'], ['a' => ''], ['a' => true], []],
             [['le.php', '-a', 'b'], ['a' => ':'], ['a' => 'b'], []],
             [['le.php', '-a', 'b', 'c'], ['a' => ':'], ['a' => 'b'], ['c']],
             [['le.php', '-a', 'b', 'c'], ['a' => '::'], ['a' => 'b'], ['c']],
-            [['le.php', '-a'], ['a' => '::'], ['a' => null], []],
-            [['le.php', '-a', 'b'], ['a' => ''], ['a' => null], ['b']],
+            [['le.php', '-a'], ['a' => '::'], ['a' => true], []],
+            [['le.php', '-a', 'b'], ['a' => ''], ['a' => true], ['b']],
             [['le.php', '--', '-a', 'b'], ['a' => ''], [], ['-a', 'b']],
         ];
     }
